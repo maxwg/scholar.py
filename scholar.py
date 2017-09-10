@@ -758,7 +758,8 @@ class SearchScholarQuery(ScholarQuery):
         + '&as_vis=%(citations)s' \
         + '&btnG=&hl=en' \
         + '%(num)s' \
-        + '&as_sdt=%(patents)s%%2C5'
+        + '&as_sdt=%(patents)s%%2C5'\ 
+        + '&start=%(start)s' 
 
     def __init__(self):
         ScholarQuery.__init__(self)
@@ -773,7 +774,12 @@ class SearchScholarQuery(ScholarQuery):
         self.timeframe = [None, None]
         self.include_patents = True
         self.include_citations = True
+        self.start_index = 0 
 
+         
+    def set_start_index(self, start_index): 
+        self.start_index = start_index 
+        
     def set_words(self, words):
         """Sets words that *all* must be found in the result."""
         self.words = words
@@ -852,7 +858,8 @@ class SearchScholarQuery(ScholarQuery):
                    'ylo': self.timeframe[0] or '',
                    'yhi': self.timeframe[1] or '',
                    'patents': '0' if self.include_patents else '1',
-                   'citations': '0' if self.include_citations else '1'}
+                   'citations': '0' if self.include_citations else '1',
+                   'start': self.start_index } 
 
         for key, val in urlargs.items():
             urlargs[key] = quote(encode(val))
@@ -894,7 +901,7 @@ class ScholarSettings(object):
         self.per_page_results = ScholarUtils.ensure_int(
             per_page_results, 'page results must be integer')
         self.per_page_results = min(
-            self.per_page_results, ScholarConf.MAX_PAGE_RESULTS)
+        self.per_page_results, ScholarConf.MAX_PAGE_RESULTS)
         self._is_configured = True
 
     def is_configured(self):
@@ -1287,19 +1294,36 @@ scholar.py -c 5 -a "albert einstein" -t --none "quantum theory" --after 1970"""
             query.set_include_citations(False)
 
     if options.count is not None:
+        num_results = options.count 
         options.count = min(options.count, ScholarConf.MAX_PAGE_RESULTS)
         query.set_num_page_results(options.count)
-
-    querier.send_query(query)
-
-    if options.csv:
-        csv(querier)
-    elif options.csv_header:
-        csv(querier, header=True)
-    elif options.citation is not None:
-        citation_export(querier)
     else:
-        txt(querier, with_globals=options.txt_globals)
+        num_results = float("inf")
+       
+    index = 0
+    while True:
+        if index + ScholarConf.MAX_PAGE_RESULTS > num_results:
+            query.set_num_page_results(num_results - index)
+
+        query.set_start_index(index)
+
+        querier.send_query(query)
+
+        if options.csv:
+            csv(querier)
+        elif options.csv_header:
+            csv(querier, header=True)
+        elif options.citation is not None:
+            citation_export(querier)
+        else:
+            txt(querier, with_globals=options.txt_globals)
+
+        if len(querier.articles) < ScholarConf.MAX_PAGE_RESULTS:
+            # we've reached the end of the list
+            break
+        index += ScholarConf.MAX_PAGE_RESULTS
+
+    
 
     if options.cookie_file:
         querier.save_cookies()
